@@ -1,0 +1,41 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Loan {
+  id                String       @id @default(uuid())
+  principal         Int
+  annualRate        Int          // store as rate * 100, e.g. 18% -> 1800, to avoid floats
+  tenureMonths      Int
+  disbursementDate  DateTime
+  createdAt         DateTime     @default(now())
+  instalments       Instalment[]
+  payments          Payment[]
+}
+
+model Instalment {
+  id                  String   @id @default(uuid())
+  loanId              String
+  loan                Loan     @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  sequenceNumber      Int
+  dueDate             DateTime
+  principalComponent  Int
+  interestComponent   Int
+  totalDue            Int
+  amountPaid          Int      @default(0)
+}
+
+model Payment {
+  id              String   @id @default(uuid())
+  loanId          String
+  loan            Loan     @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  amount          Int
+  paymentDate     DateTime
+  idempotencyKey  String   @unique
+  createdAt       DateTime @default(now())
+}
