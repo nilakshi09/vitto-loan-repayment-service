@@ -19,6 +19,9 @@ npm install
 ### 2. Configure environment variables
 
 Copy `.env.example` to `.env.local` and fill in the values.
+```bash
+copy .env.example .env.local
+```
 
 > **Note:** Prisma CLI commands (migrate, seed) read from `.env`, not `.env.local`. 
 > Copy `.env.local` to `.env` as well before running the database setup step below:
