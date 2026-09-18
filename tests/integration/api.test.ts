@@ -25,17 +25,15 @@ describe('Integration: Loan Lifecycle', () => {
   let testLoanId: string;
 
   beforeAll(async () => {
-    // Clean up any previous test data
-    await prisma.payment.deleteMany({});
-    await prisma.instalment.deleteMany({});
-    await prisma.loan.deleteMany({});
+    // No-op or clean specific test loans if any leftover
   });
 
   afterAll(async () => {
-    // Clean up test data
-    await prisma.payment.deleteMany({});
-    await prisma.instalment.deleteMany({});
-    await prisma.loan.deleteMany({});
+    if (testLoanId) {
+      await prisma.payment.deleteMany({ where: { loanId: testLoanId } });
+      await prisma.instalment.deleteMany({ where: { loanId: testLoanId } });
+      await prisma.loan.deleteMany({ where: { id: testLoanId } });
+    }
     await prisma.$disconnect();
   });
 
@@ -68,7 +66,7 @@ describe('Integration: Loan Lifecycle', () => {
         where: { id: newLoan.id },
         include: { instalments: { orderBy: { sequenceNumber: 'asc' } } },
       });
-    });
+    }, { timeout: 30000, maxWait: 10000 });
 
     expect(loan).toBeTruthy();
     expect(loan!.instalments).toHaveLength(24);
@@ -122,7 +120,7 @@ describe('Integration: Loan Lifecycle', () => {
           data: { amountPaid: update.newAmountPaid },
         });
       }
-    });
+    }, { timeout: 30000, maxWait: 10000 });
 
     // Verify the instalment was updated
     const updatedLoan = await prisma.loan.findUnique({

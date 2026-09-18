@@ -88,11 +88,20 @@ interface LoanDashboardProps {
   user: User;
 }
 
+interface LoanSummary {
+  id: string;
+  principal: number;
+  annualRate: number;
+  tenureMonths: number;
+  disbursementDate: string;
+}
+
 export default function LoanDashboard({ user }: LoanDashboardProps) {
-  const [loans, setLoans] = useState<string[]>([]);
+  const [loans, setLoans] = useState<LoanSummary[]>([]);
   const [selectedLoanId, setSelectedLoanId] = useState<string | null>(null);
   const [loanData, setLoanData] = useState<LoanData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [creatingLoan, setCreatingLoan] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Payment form state
@@ -114,30 +123,38 @@ export default function LoanDashboard({ user }: LoanDashboardProps) {
     };
   }, [user]);
 
-  // Fetch list of loans (from seeded data)
-  useEffect(() => {
-    async function fetchLoans() {
-      try {
-        const headers = await getAuthHeaders();
-        // We'll fetch all loans by trying to get the first seeded one
-        // Since there's no list endpoint, we use the seed script's known loan
-        // For now, we need a way to discover loans — let's add a simple list
-        const res = await fetch('/api/loans', { headers });
-        if (res.ok) {
-          const data = await res.json();
-          if (Array.isArray(data)) {
-            setLoans(data.map((l: { id: string }) => l.id));
-            if (data.length > 0) setSelectedLoanId(data[0].id);
-          }
-        }
-      } catch {
-        // No list endpoint, try fetching from localStorage or show empty
-      } finally {
-        setLoading(false);
+  // Fetch list of loans
+  const fetchLoans = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch('/api/loans', { headers });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error?.message || 'Failed to load loans');
       }
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        setLoans(data);
+        if (data.length > 0) {
+          setSelectedLoanId((prev) => (prev && data.some((l: LoanSummary) => l.id === prev) ? prev : data[0].id));
+        } else {
+          setSelectedLoanId(null);
+          setLoanData(null);
+        }
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to load loans';
+      setError(message);
+    } finally {
+      setLoading(false);
     }
-    fetchLoans();
   }, [getAuthHeaders]);
+
+  useEffect(() => {
+    fetchLoans();
+  }, [fetchLoans]);
 
   // Fetch selected loan details
   const fetchLoanDetails = useCallback(async (loanId: string) => {
@@ -165,6 +182,36 @@ export default function LoanDashboard({ user }: LoanDashboardProps) {
       fetchLoanDetails(selectedLoanId);
     }
   }, [selectedLoanId, fetchLoanDetails]);
+
+  async function handleCreateSampleLoan() {
+    setCreatingLoan(true);
+    setError(null);
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch('/api/loans', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          principal: 20000000,
+          annualRate: 1800,
+          tenureMonths: 24,
+          disbursementDate: new Date().toISOString(),
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error?.message || 'Failed to create sample loan');
+      }
+
+      await fetchLoans();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to create sample loan';
+      setError(message);
+    } finally {
+      setCreatingLoan(false);
+    }
+  }
 
   async function handlePayment(e: FormEvent) {
     e.preventDefault();
@@ -222,31 +269,81 @@ export default function LoanDashboard({ user }: LoanDashboardProps) {
 
   const today = new Date();
 
-  if (loading && !loanData) {
-    return <div className="loading">Loading loan data…</div>;
-  }
-
   return (
     <div className="page-container">
       <div className="page-header">
         <div>
           <h1 className="page-title">Loan Repayment</h1>
-          <p className="page-subtitle">EMI schedule &amp; payment tracking</p>
+          {loanData ? (
+            <p className="page-subtitle">
+              {loanData.tenureMonths}-month term at {loanData.annualRate / 100}% p.a. • Disbursed {formatDate(loanData.disbursementDate)}
+            </p>
+          ) : (
+            <p className="page-subtitle">EMI schedule &amp; payment tracking</p>
+          )}
         </div>
         <button className="btn-sign-out" onClick={handleSignOut}>
           Sign out
         </button>
       </div>
 
+      {loans.length > 1 && (
+        <div className="loan-selector">
+          <label htmlFor="loan-select">Select Loan:</label>
+          <select
+            id="loan-select"
+            value={selectedLoanId || ''}
+            onChange={(e) => setSelectedLoanId(e.target.value)}
+          >
+            {loans.map((l, index) => (
+              <option key={l.id} value={l.id}>
+                Loan #{index + 1} — {formatRupeesCompact(l.principal)} ({l.tenureMonths}m @ {l.annualRate / 100}%)
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
       {error && (
-        <div className="payment-message payment-message--error" style={{ marginBottom: '1rem' }}>
-          {error}
+        <div className="payment-card" style={{ textAlign: 'center', padding: '3rem 2rem', borderColor: 'var(--color-error)', backgroundColor: 'var(--bg-error)' }}>
+          <h2 className="payment-title" style={{ fontSize: '1.1rem', color: 'var(--color-error)' }}>
+            Couldn't load loan data. Please refresh.
+          </h2>
+          <p style={{ marginTop: '0.5rem', color: 'var(--text-secondary)' }}>{error}</p>
+        </div>
+      )}
+
+      {(loading || (!loanData && loans.length > 0)) && !error && (
+        <div className="payment-card" style={{ textAlign: 'center', padding: '3rem 2rem' }}>
+          <h2 className="payment-title" style={{ fontSize: '1.1rem', color: 'var(--text-secondary)' }}>
+            Loading loan data…
+          </h2>
+        </div>
+      )}
+
+      {!loading && !loanData && loans.length === 0 && !error && (
+        <div className="payment-card" style={{ textAlign: 'center', padding: '3rem 2rem' }}>
+          <h2 className="payment-title" style={{ fontSize: '1.1rem', marginBottom: '0.5rem' }}>
+            No Active Loans Found
+          </h2>
+          <p className="payment-helper" style={{ maxWidth: '400px', margin: '0 auto 1.5rem' }}>
+            There are currently no active loans in the database. You can generate a sample loan with full 24-month EMI amortization schedule to get started.
+          </p>
+          <button
+            className="btn-primary"
+            onClick={handleCreateSampleLoan}
+            disabled={creatingLoan}
+            style={{ margin: '0 auto' }}
+          >
+            {creatingLoan ? 'Creating sample loan…' : 'Create Sample Loan (₹2,00,000)'}
+          </button>
         </div>
       )}
 
       {loanData && (
         <>
           {/* Position Summary — hero numbers */}
+          <div className="section-label">Repayment Position</div>
           <div className="position-summary">
             <div className="position-item">
               <div className="position-label">Outstanding principal</div>
@@ -279,12 +376,21 @@ export default function LoanDashboard({ user }: LoanDashboardProps) {
                   : '₹0'}
               </div>
             </div>
+            <div className="position-item">
+              <div className="position-label">Original principal</div>
+              <div className="position-value">
+                {formatRupeesCompact(loanData.principal)}
+              </div>
+            </div>
           </div>
 
-          {/* Instalment Table */}
-          <div className="table-container">
-            <table className="instalment-table">
-              <thead>
+          <div className="dashboard-body">
+            <div className="dashboard-main">
+              {/* Instalment Table */}
+              <div className="section-label">Repayment Schedule</div>
+              <div className="table-container">
+                <table className="instalment-table">
+                  <thead>
                 <tr>
                   <th>#</th>
                   <th>Due date</th>
@@ -307,8 +413,7 @@ export default function LoanDashboard({ user }: LoanDashboardProps) {
                       <td className="col-money">{formatRupees(inst.totalDue)}</td>
                       <td className="col-money">{formatRupees(inst.amountPaid)}</td>
                       <td style={{ textAlign: 'right' }}>
-                        <span className={`status status--${status}`}>
-                          <span className="status-dot" />
+                        <span className={`status-pill status-pill--${status}`}>
                           {STATUS_LABELS[status]}
                         </span>
                       </td>
@@ -318,58 +423,68 @@ export default function LoanDashboard({ user }: LoanDashboardProps) {
               </tbody>
             </table>
           </div>
+        </div>
 
-          {/* Payment Form */}
-          <div className="payment-section">
-            <h2 className="payment-title">Record a payment</h2>
-            <form className="payment-form" onSubmit={handlePayment}>
-              <div className="form-group">
-                <label className="form-label" htmlFor="amount">
-                  Amount (₹)
-                </label>
-                <input
-                  id="amount"
-                  className="form-input"
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  value={paymentAmount}
-                  onChange={(e) => setPaymentAmount(e.target.value)}
-                  placeholder="9,986.00"
-                  required
-                />
-              </div>
-              <div className="form-group">
-                <label className="form-label" htmlFor="pay-date">
-                  Payment date
-                </label>
-                <input
-                  id="pay-date"
-                  className="form-input"
-                  type="date"
-                  value={paymentDate}
-                  onChange={(e) => setPaymentDate(e.target.value)}
-                  required
-                />
-              </div>
-              <button
-                className="btn-primary"
-                type="submit"
-                disabled={submitting}
-              >
-                {submitting ? 'Recording…' : 'Record payment'}
-              </button>
-            </form>
-            {paymentMessage && (
-              <div
-                className={`payment-message payment-message--${paymentMessage.type}`}
-              >
-                {paymentMessage.text}
-              </div>
-            )}
+        <div className="dashboard-sidebar">
+          <div className="payment-card">
+            {/* Payment Form */}
+            <div className="payment-section">
+              <h2 className="payment-title">Record a payment</h2>
+              <p className="payment-helper">Payments are allocated to the earliest unpaid instalment first.</p>
+              <form className="payment-form" onSubmit={handlePayment}>
+                <div className="form-group">
+                  <label className="form-label" htmlFor="amount">
+                    Amount
+                  </label>
+                  <div className="input-with-prefix">
+                    <span className="input-prefix">₹</span>
+                    <input
+                      id="amount"
+                      className="form-input"
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      value={paymentAmount}
+                      onChange={(e) => setPaymentAmount(e.target.value)}
+                      placeholder="9,986.00"
+                      required
+                    />
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label className="form-label" htmlFor="pay-date">
+                    Payment date
+                  </label>
+                  <input
+                    id="pay-date"
+                    className="form-input"
+                    type="date"
+                    value={paymentDate}
+                    onChange={(e) => setPaymentDate(e.target.value)}
+                    required
+                  />
+                </div>
+                <button
+                  className="btn-primary"
+                  type="submit"
+                  disabled={submitting}
+                >
+                  {submitting ? 'Recording…' : 'Record payment'}
+                </button>
+              </form>
+              {paymentMessage && (
+                <div
+                  className={`payment-message payment-message--${paymentMessage.type}`}
+                >
+                  {paymentMessage.text}
+                </div>
+              )}
+            </div>
           </div>
-        </>
-      )}
-    </div>
+        </div>
+      </div>
+    </>
+  )}
+</div>
   );
 }

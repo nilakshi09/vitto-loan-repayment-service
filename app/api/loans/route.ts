@@ -5,18 +5,20 @@ import { createLoanSchema } from '@/lib/validation';
 import { verifyAuth } from '@/lib/auth';
 
 export async function GET(request: NextRequest) {
-  const authResult = await verifyAuth(request);
+  const [authResult, loans] = await Promise.all([
+    verifyAuth(request),
+    prisma.loan.findMany({
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, principal: true, annualRate: true, tenureMonths: true, disbursementDate: true, createdAt: true },
+    })
+  ]);
+
   if (!authResult.authenticated) {
     return NextResponse.json(
       { error: { code: 'UNAUTHORIZED', message: 'Missing or invalid authentication token' } },
       { status: 401 }
     );
   }
-
-  const loans = await prisma.loan.findMany({
-    orderBy: { createdAt: 'desc' },
-    select: { id: true, principal: true, annualRate: true, tenureMonths: true, disbursementDate: true, createdAt: true },
-  });
 
   return NextResponse.json(loans);
 }
@@ -75,7 +77,7 @@ export async function POST(request: NextRequest) {
         where: { id: newLoan.id },
         include: { instalments: { orderBy: { sequenceNumber: 'asc' } } },
       });
-    });
+    }, { timeout: 30000, maxWait: 10000 });
 
     return NextResponse.json(loan, { status: 201 });
   } catch (err) {

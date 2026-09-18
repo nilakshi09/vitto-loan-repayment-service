@@ -109,7 +109,7 @@ export async function POST(
           unallocatedAmount: allocation.unallocatedAmount,
         },
       };
-    });
+    }, { timeout: 30000, maxWait: 10000 });
 
     const position = computePosition(result.loan!.instalments);
 

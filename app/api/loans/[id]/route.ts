@@ -7,21 +7,22 @@ export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const authResult = await verifyAuth(request);
+  const [authResult, loan] = await Promise.all([
+    verifyAuth(request),
+    prisma.loan.findUnique({
+      where: { id: params.id },
+      include: {
+        instalments: { orderBy: { sequenceNumber: 'asc' } },
+      },
+    })
+  ]);
+
   if (!authResult.authenticated) {
     return NextResponse.json(
       { error: { code: 'UNAUTHORIZED', message: 'Missing or invalid authentication token' } },
       { status: 401 }
     );
   }
-
-  const loan = await prisma.loan.findUnique({
-    where: { id: params.id },
-    include: {
-      instalments: { orderBy: { sequenceNumber: 'asc' } },
-      payments: { orderBy: { createdAt: 'desc' } },
-    },
-  });
 
   if (!loan) {
     return NextResponse.json(
