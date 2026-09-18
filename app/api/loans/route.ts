@@ -3,14 +3,12 @@ import { prisma } from '@/lib/prisma';
 import { generateSchedule } from '@/lib/schedule';
 import { createLoanSchema } from '@/lib/validation';
 import { verifyAuth } from '@/lib/auth';
+import { getLoans } from '@/lib/queries';
 
 export async function GET(request: NextRequest) {
   const [authResult, loans] = await Promise.all([
     verifyAuth(request),
-    prisma.loan.findMany({
-      orderBy: { createdAt: 'desc' },
-      select: { id: true, principal: true, annualRate: true, tenureMonths: true, disbursementDate: true, createdAt: true },
-    })
+    getLoans(),
   ]);
 
   if (!authResult.authenticated) {
