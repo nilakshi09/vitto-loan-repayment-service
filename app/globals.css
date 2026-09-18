@@ -277,7 +277,7 @@ body {
 @media (min-width: 1024px) {
   .dashboard-body {
     display: grid;
-    grid-template-columns: 1fr minmax(0, 0.54fr);
+    grid-template-columns: 1fr minmax(320px, 0.54fr);
     align-items: start;
   }
 
@@ -285,6 +285,7 @@ body {
     position: sticky;
     top: 2rem;
     max-width: 420px;
+    min-width: 300px;
   }
 }
 
@@ -432,7 +433,8 @@ body {
   padding: 0.625rem 1.5rem;
   cursor: pointer;
   transition: all 0.15s ease;
-  white-space: nowrap;
+  box-sizing: border-box;
+  overflow: visible;
   height: fit-content;
 }
 
